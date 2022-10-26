@@ -12,7 +12,7 @@ cd FASTQS
 
 for (( i = 70; i <= 77; i++ ))
 do
-	nohup fasterq-dump -S SRR5855$i
+	nohup fasterq-dump -S SRR5855$i &
 done
 
 # check read counts
