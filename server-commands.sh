@@ -36,3 +36,11 @@ do
 	head -n2 SRR5855${i}_1.fastq
 	printf '\n'
 done
+
+
+# check cpu architecture
+
+# lscpu
+
+### server cpu architecture is x86_64
+
