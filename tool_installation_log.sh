@@ -1,4 +1,4 @@
-#Tools needed: sratoolkit, samtools, bedtools, gatk
+#Tools needed: sratoolkit, samtools, bedtools, gatk, tophat2, bowtie2
 #Other files needed: human reference genome
 
 ########################
