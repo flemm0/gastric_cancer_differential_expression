@@ -42,6 +42,8 @@ wget https://github.com/arq5x/bedtools2/releases/download/v2.30.0/bedtools-2.30.
 
 tar -xzvf bedtools-2.30.0.tar.gz
 
+make
+
 rm bedtools-2.30.0.tar.gz
 
 echo 'export PATH=$PATH:/home/wuflemmi-F22/TRGN514/ngs-tools/bedtools2/bin' >> ~/.bashrc
