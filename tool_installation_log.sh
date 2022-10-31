@@ -40,7 +40,7 @@ cd ..
 
 wget https://github.com/arq5x/bedtools2/releases/download/v2.30.0/bedtools-2.30.0.tar.gz
 
-tar -xvf bedtools-2.30.0.tar.gz
+tar -xzvf bedtools-2.30.0.tar.gz
 
 rm bedtools-2.30.0.tar.gz
 
