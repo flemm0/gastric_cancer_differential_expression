@@ -101,3 +101,5 @@ cd /scratch/wuflemmi-F22/REFS
 wget ftp://ftp.ensembl.org/pub/release-108/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.toplevel.fa.gz
 
 gunzip Homo_sapiens.GRCh38.dna.toplevel.fa.gz &
+
+
