@@ -1,5 +1,4 @@
 #Tools needed: sratoolkit, samtools, bedtools, gatk, tophat2, bowtie2
-#Other files needed: human reference genome
 
 ########################
 #install sratoolkit
@@ -89,17 +88,3 @@ echo 'export GATK=/home/wuflemmi-F22/TRGN514/ngs-tools/gatk-4.3.0.0/gatk-package
 
 
 source ~/.bashrc
-
-
-
-
-#######################
-# download human reference genome (GrCh38)
-
-cd /scratch/wuflemmi-F22/REFS
-
-wget ftp://ftp.ensembl.org/pub/release-108/fasta/homo_sapiens/dna/Homo_sapiens.GRCh38.dna.toplevel.fa.gz
-
-gunzip Homo_sapiens.GRCh38.dna.toplevel.fa.gz &
-
-
