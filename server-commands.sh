@@ -56,3 +56,8 @@ nohup wget https://ftp.ensembl.org/pub/current_fasta/homo_sapiens/dna/Homo_sapie
 nohup wget https://ftp.ensembl.org/pub/current_gtf/homo_sapiens/Homo_sapiens.GRCh38.108.chr.gtf.gz &
 
 gunzip *.gz
+
+
+# build index
+
+nohup bowtie2-build --threads 12 Homo_sapiens.GRCh38.dna.primary_assembly.fa Homo_sapiens.GRCh38.dna.primary_assembly > bowtie2.nohup.out &
