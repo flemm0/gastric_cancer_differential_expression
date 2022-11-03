@@ -45,7 +45,7 @@ done
 ### server cpu architecture is x86_64
 
 
-######
+##################################################################
 
 # download human reference genome fasta and gtf files from ensembl
 
@@ -58,6 +58,62 @@ nohup wget https://ftp.ensembl.org/pub/current_gtf/homo_sapiens/Homo_sapiens.GRC
 gunzip *.gz
 
 
+##################################################################
+
 # build index
 
 nohup bowtie2-build --threads 12 Homo_sapiens.GRCh38.dna.primary_assembly.fa Homo_sapiens.GRCh38.dna.primary_assembly > bowtie2.nohup.out &
+
+
+##################################################################
+
+# preliminary alignment to whole genome and whole transcriptome
+## will be aligning SRR85571 (gastric normal tissue) and SRR585573 (gastric cancer tissue cell culture)
+
+
+cd ../FASTQS
+
+# align SRR585571 to genome
+
+nohup tophat2 \
+	-p 8 \
+	-G ../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+	-o ./sample1_5571_genomeAlign \
+	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly \
+	SRR585571_1.fastq,SRR585571_2.fastq > \
+	sample1_5571.genome.nohup.out &
+
+
+# align SRR585571 to transcriptome
+
+nohup tophat2 \
+	-p 8 \
+	-G ../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+	-T \
+	-o ./sample1_5571_transcriptomeAlign \
+	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly \
+	SRR585571_1.fastq,SRR585571_2.fastq > \
+	sample1_5571.transcriptome.nohup.out &
+
+
+# align SRR585573 to genome
+
+nohup tophat2 \
+	-p 12 \
+	-G ../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+	-o ./sample2_5573_genomeAlign \
+	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly \
+	SRR585573_1.fastq,SRR585573_2.fastq > \
+	sample2_5573.genome.nohup.out &
+
+
+# align SRR585573 to transcriptome
+
+nohup tophat2 \
+	-p 12 \
+	-G ../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+	-T \
+	-o ./sample2_5573_transcriptomeAlign \
+	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly \
+	SRR585573_1.fastq,SRR585573_2.fastq > \
+	sample2_5573.transcriptome.nohup.out &
