@@ -1,9 +1,14 @@
 #!/bin/bash
 
+##################################################################
+
 # make directories
 
 cd /scratch/
 mkdir FASTQS REFS Tophat-BAMS Cuffdiff-STATS Cuffdiff-noSTATS
+
+
+##################################################################
 
 
 # download SRA sequences as fastq files
@@ -14,6 +19,9 @@ for (( i = 70; i <= 77; i++ ))
 do
 	nohup fasterq-dump -S SRR5855$i &
 done
+
+
+##################################################################
 
 # check read counts
 
@@ -26,6 +34,8 @@ do
 done
 
 
+##################################################################
+
 # check that read 1 and read 2 are not the same
 
 for (( i = 70; i <= 77; i++ ))
@@ -37,6 +47,8 @@ do
 	printf '\n'
 done
 
+
+##################################################################
 
 # check cpu architecture
 
@@ -117,3 +129,20 @@ nohup tophat2 \
 	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly \
 	SRR585573_1.fastq,SRR585573_2.fastq > \
 	sample2_5573.transcriptome.nohup.out &
+
+
+##################################################################
+
+# align remaining reads to whole genome
+
+for i in 70 72 74 75 76 77
+do
+	nohup tophat2 \
+		-p 12 \
+		-G ../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+		-o ./5855${i}_genomeAlign \
+		../REFS/Homo_sapiens.GRCh38.dna.primary_assembly \
+		SRR5855${i}_1.fastq,SRR5855${i}_2.fastq > \
+		5855${i}.genome.nohup.out &
+done
+
