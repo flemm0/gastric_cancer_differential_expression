@@ -87,4 +87,15 @@ rm gatk-4.3.0.0.zip
 echo 'export GATK=/home/wuflemmi-F22/TRGN514/ngs-tools/gatk-4.3.0.0/gatk-package-4.3.0.0-local.jar' >> ~/.bashrc
 
 
+########################
+# install cufflinks/cuffdiff
+
+wget http://cole-trapnell-lab.github.io/cufflinks/assets/downloads/cufflinks-2.2.1.Linux_x86_64.tar.gz
+
+tar -xvf cufflinks-2.2.1.Linux_x86_64.tar.gz
+
+rm cufflinks-2.2.1.Linux_x86_64.tar.gz
+
+echo 'export PATH=$PATH:/home/wuflemmi-F22/TRGN514/ngs-tools/cufflinks-2.2.1.Linux_x86_64' >> ~/.bashrc
+
 source ~/.bashrc
