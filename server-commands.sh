@@ -147,6 +147,7 @@ do
 done
 
 
+
 ##################################################################
 
 # create symlinks for bamfiles in FASTQS directory to access within Tophat-BAMS directory
@@ -165,4 +166,41 @@ ln -s /scratch/wuflemmi-F22/FASTQS/585577_genomeAlign/accepted_hits.bam cancer_c
 ## check that symlinks made correctly
 
 find . -maxdepth 1 -type l -ls
+
+
+
+##################################################################
+
+# run cuffdiff without differential expression tests
+## gives normalized FPKM values for samples without statistical comparisons between coniditions
+
+nohup cuffdiff \
+	-L norm1,norm2,ct1,ct2,ct2,ccl1,ccl2,ccl3 \
+	-p 12 \
+	-o ../Cuffdiff-noSTATS \
+	--no-diff \
+	--total-hits-norm \
+	--frag-bias-correct \
+	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly.fa \
+	--multi-read-correct \
+	--library-norm-method quartile \
+	../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+	normal1 normal2 cancer_tissue1 cancer_tissue2 cancer_tissue3 cancer_cl1 cancer_cl2 cancer_cl3 > \
+	cuffdiff_noSTATS.nohup.out &
+
+# run cuffdiff between normal gastric tissue and gastric cancer tissue
+## gives p-values and log2 fold differences between the two groups
+
+nohup cuffdiff \
+	-L normal,cancer \
+	-p 12 \
+	-o ../Cuffdiff-STATS \
+	--total-hits-norm \
+	--frag-bias-correct \
+	../REFS/Homo_sapiens.GRCh38.dna.primary_assembly.fa \
+	--multi-read-correct \
+	--library-norm-method quartile \
+	../REFS/Homo_sapiens.GRCh38.108.chr.gtf \
+	normal1,normal2 cancer_tissue1,cancer_tissue2,cancer_tissue3 > \
+	cuffdiff_STATS.nohup.out &
 
