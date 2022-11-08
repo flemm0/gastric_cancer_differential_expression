@@ -162,3 +162,7 @@ ln -s /scratch/wuflemmi-F22/FASTQS/585575_genomeAlign/accepted_hits.bam cancer_c
 ln -s /scratch/wuflemmi-F22/FASTQS/585576_genomeAlign/accepted_hits.bam cancer_cl2
 ln -s /scratch/wuflemmi-F22/FASTQS/585577_genomeAlign/accepted_hits.bam cancer_cl3
 
+## check that symlinks made correctly
+
+find . -maxdepth 1 -type l -ls
+
