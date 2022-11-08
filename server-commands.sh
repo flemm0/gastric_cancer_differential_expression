@@ -4,7 +4,7 @@
 
 # make directories
 
-cd /scratch/
+cd /scratch/wuflemmi-F22
 mkdir FASTQS REFS Tophat-BAMS Cuffdiff-STATS Cuffdiff-noSTATS
 
 
