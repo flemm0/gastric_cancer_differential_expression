@@ -146,3 +146,19 @@ do
 		5855${i}.genome.nohup.out &
 done
 
+
+##################################################################
+
+# create symlinks for bamfiles in FASTQS directory to access within Tophat-BAMS directory
+
+cd ../Tophat-BAMS
+
+ln -s /scratch/wuflemmi-F22/FASTQS/585570_genomeAlign/accepted_hits.bam normal1
+ln -s /scratch/wuflemmi-F22/FASTQS/sample1_585571_genomeAlign/accepted_hits.bam normal1
+ln -s /scratch/wuflemmi-F22/FASTQS/585572_genomeAlign/accepted_hits.bam cancer_tissue1
+ln -s /scratch/wuflemmi-F22/FASTQS/sample2_585573_genomeAlign/accepted_hits.bam cancer_tissue2
+ln -s /scratch/wuflemmi-F22/FASTQS/585574_genomeAlign/accepted_hits.bam cancer_tissue3 
+ln -s /scratch/wuflemmi-F22/FASTQS/585575_genomeAlign/accepted_hits.bam cancer_cl1
+ln -s /scratch/wuflemmi-F22/FASTQS/585576_genomeAlign/accepted_hits.bam cancer_cl2
+ln -s /scratch/wuflemmi-F22/FASTQS/585577_genomeAlign/accepted_hits.bam cancer_cl3
+
