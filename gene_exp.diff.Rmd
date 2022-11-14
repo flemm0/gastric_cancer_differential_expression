@@ -1,0 +1,87 @@
+# Exploring the gene_exp.diff data from cuffdiff with stats turned on
+
+```{r message = FALSE}
+library(tidyverse)
+library(data.table)
+library(ggfortify)
+```
+
+
+```{r read in dataset}
+setwd("~/Desktop/TRGN514/rnaseq_proj/")
+
+exp <- data.table::fread("./gene_exp.diff", sep = "\t")
+```
+
+```{r}
+head(exp)
+tail(exp)
+dim(exp) #62635 tests (number of genes tested)
+```
+
+```{r filter dataset}
+# the cutoff will be p-val of < 0.001 and log2 fold change greater than 5 or less than -5
+
+exp_filt <- exp %>%
+  arrange(`log2(fold_change)`) %>%
+  filter(p_value < 0.001) %>%
+  filter(`log2(fold_change)` != -Inf, # Inf or -Inf means gene had 0 expression in one of the groups
+         `log2(fold_change)` != Inf) %>%
+  filter(`log2(fold_change)` <= -5 | `log2(fold_change)` >= 5)
+```
+
+
+```{r check data}
+nrow(exp_filt)
+head(exp_filt)
+```
+
+```{r}
+up_genes <- exp_filt %>%
+  filter(`log2(fold_change)` > 0) %>%
+  select(gene_id, gene)
+
+down_genes <- exp_filt %>%
+  filter(`log2(fold_change)` < 0) %>%
+  select(gene_id, gene)
+```
+
+
+FPKM
+
+```{r}
+fpkm <- data.table::fread("./genes.fpkm_tracking", sep = "\t")
+
+names(fpkm)[26:29] <- names(fpkm)[26:29] %>%
+  str_replace("ct2", "ct3")
+
+
+fpkm <- fpkm %>%
+  select(tracking_id, ends_with("_FPKM"))
+```
+
+
+```{r pca preprocessing}
+row.names(fpkm) <- fpkm$tracking_id
+
+fpkm <- fpkm %>% select(ends_with("FPKM"))
+
+fpkm <- t(fpkm)
+
+# normalize everything using log conversion
+fpkm_norm <- fpkm + 1
+
+fpkm_norm <- log10(fpkm_norm)
+
+# create sample column for labeling
+fpkm_norm <- as.data.frame(fpkm_norm)
+fpkm_norm$samples <- row.names(fpkm_norm)
+
+fpkm_norm.data <- fpkm_norm[-ncol(fpkm_norm)]
+```
+
+Plot PCA
+```{r}
+autoplot(prcomp(fpkm_norm.data), data = fpkm_norm, colour = "samples")
+```
+
