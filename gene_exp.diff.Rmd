@@ -5,13 +5,18 @@ library(tidyverse)
 library(data.table)
 library(ggfortify)
 library(ggplot2)
+library(factoextra)
+if (!require(ComplexHeatmap)) { BiocManager::install("ComplexHeatmap") }
+library(ComplexHeatmap)
+library(pvclust)
+library(parallel)
 ```
 
 
 ```{r read in dataset}
-setwd("~/Desktop/TRGN514/rnaseq_proj/")
+#setwd("~/Desktop/TRGN514/rnaseq_proj/")
 
-exp <- data.table::fread("./gene_exp.diff", sep = "\t")
+exp <- data.table::fread("./data/gene_exp.diff", sep = "\t")
 ```
 
 ```{r}
@@ -51,7 +56,7 @@ down_genes <- exp_filt %>%
 FPKM
 
 ```{r}
-fpkm <- data.table::fread("./genes.fpkm_tracking", sep = "\t")
+fpkm <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
 
 names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names
   str_replace("ct2", "ct3")
@@ -122,8 +127,49 @@ reshape2::melt(df) %>%
   scale_fill_manual(values = group.colors)
 ```
 
-```{r}
-data <- fread("./genes.fpkm_tracking")
-head(data)
+```{r redo PCA with filtered genes only}
+fpkm_filt <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
+
+names(fpkm_filt)[26:29] <- names(fpkm_filt)[26:29] %>% # fix column names
+  str_replace("ct2", "ct3")
+
+
+fpkm_filt <- fpkm_filt %>% 
+  select(tracking_id, ends_with("_FPKM")) %>%
+  filter(tracking_id %in% exp_filt$test_id) %>%
+  column_to_rownames("tracking_id")
+
+
+fpkm_filt_norm <- log10(fpkm_filt + 0.1) 
+
+fpkm_filt_norm <- t(fpkm_filt_norm)
+
+pca2 <- prcomp(fpkm_filt_norm)
+
+pca2$x
+
+autoplot(pca2)
+```
+```{r Dendrogram of differentially expressed genes}
+res.dist <- get_dist(fpkm_filt_norm, method = "pearson")
+res.hc <- hclust(d = res.dist, method = "ward.D2")
+fviz_dend(res.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE)
+```
+
+```{r p-values for clustering}
+n.cores <- detectCores()*3/4
+cl <- makePSOCKcluster(n.cores)
+res.pv <- parPvclust(cl, t(fpkm_filt_norm), method.hclust = "ward.D2", method.dist = "correlation", nboot = 100)
+stopCluster(cl)
+
+plot(res.pv, hang = -1, cex = 0.5)
+
+# Clusters with AU >= 95% are considered to be strongly supported by data.
+```
+
+
+
+```{r heatmap}
+Heatmap(fpkm_filt_norm, show_column_names = FALSE)
 ```
 
