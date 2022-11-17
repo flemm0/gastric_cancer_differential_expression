@@ -1,3 +1,6 @@
 *.xlsx
 .DS_Store
 *.swp
+*.RData
+*.Rhistory
+IPA-Results/
