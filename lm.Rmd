@@ -1,0 +1,197 @@
+
+```{r}
+library(tidyverse)
+library(data.table)
+library(ggfortify)
+library(ggplot2)
+library(factoextra)
+if (!require(ComplexHeatmap)) { BiocManager::install("ComplexHeatmap") }
+library(ComplexHeatmap)
+library(pvclust)
+library(parallel)
+library(dendextend)
+```
+
+
+## PCA data
+
+```{r}
+fpkm <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
+
+names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names
+  str_replace("ct2", "ct3")
+
+
+fpkm <- fpkm %>% 
+  select(tracking_id, ends_with("_FPKM"))
+
+row.names(fpkm) <- fpkm$tracking_id
+
+fpkm <- fpkm %>% select(ends_with("FPKM"))
+
+fpkm <- t(fpkm)
+
+# normalize everything using log conversion
+fpkm_norm <- fpkm + 0.1
+
+fpkm_norm <- log10(fpkm_norm)
+
+# create sample column for labeling
+fpkm_norm <- as.data.frame(fpkm_norm)
+fpkm_norm$samples <- row.names(fpkm_norm)
+
+fpkm_norm.data <- fpkm_norm[-ncol(fpkm_norm)]
+
+fpkm_norm$type <- ifelse(grepl("norm", fpkm_norm$samples), "normal tissue",
+                            ifelse(grepl("ct", fpkm_norm$samples), "cancer tissue", "cancer cell line"))
+
+
+pca <- prcomp(fpkm_norm.data, scale. = FALSE)
+
+pca$x
+
+autoplot(pca, scale = FALSE, data = fpkm_norm, colour = "type") + ggtitle("PCA unfiltered")
+```
+
+
+## PCA on Filtered Genes
+
+```{r redo PCA with filtered genes only}
+fpkm_filt <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
+
+names(fpkm_filt)[26:29] <- names(fpkm_filt)[26:29] %>% # fix column names
+  str_replace("ct2", "ct3")
+
+
+fpkm_filt <- fpkm_filt %>% 
+  select(tracking_id, ends_with("_FPKM")) %>%
+  filter(tracking_id %in% exp_filt$test_id) %>%
+  column_to_rownames("tracking_id")
+
+
+fpkm_filt_norm <- log10(fpkm_filt + 0.1)          
+
+fpkm_filt_norm <- t(fpkm_filt_norm)
+
+fpkm_filt_norm <- fpkm_filt_norm %>%
+  as.data.frame() %>%
+  rownames_to_column("sample") %>%
+  mutate(type = ifelse(grepl("norm", sample), "normal tissue",
+                         ifelse(grepl("ct", sample), "cancer tissue", "cancer cell line")))
+  
+
+fpkm_filt_norm.data <- fpkm_filt_norm %>% select(-c(sample, type))
+
+pca2 <- prcomp(fpkm_filt_norm.data)
+
+pca2$x
+
+autoplot(pca2, scale = FALSE, data = fpkm_filt_norm, colour = "type") + ggtitle("PCA on Filtered Genes")
+```
+
+
+
+
+
+
+lm test to correct for original PC1 and PC2 values
+
+```{r pca correction - single gene}
+
+lm_data <- merge(
+  x = fpkm_filt_norm %>%
+    select(sample, ENSG00000122641),
+  
+  y = pca$x %>%
+    as.data.frame() %>%
+    select(PC1, PC2) %>%
+    rownames_to_column("sample")
+) %>% 
+  mutate(sample = if_else(grepl("norm", sample), "normal tissue",
+                            if_else(grepl("ct", sample), "cancer tissue", "cancer cell line")))
+
+lm1 <- lm(ENSG00000122641 ~ sample, data = lm_data)
+
+lmp <- function (modelobject) {
+    if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+    f <- summary(modelobject)$fstatistic
+    p <- pf(f[1],f[2],f[3],lower.tail=F)
+    attributes(p) <- NULL
+    return(p)
+}
+
+lmp(lm1)
+
+
+#summary(lm(ENSG00000122641 ~ sample + PC1 + PC2, data = lm_data))
+
+```
+
+```{r run lm test on all down genes}
+
+# create dataframe with down genes, PC1, and PC2, and group names, with genes as columns
+down_lm_data <- merge(x = pca$x %>%
+        as.data.frame() %>%
+        select(PC1, PC2) ,
+      y = merge(x = down_genes,
+                y = fpkm_filt_norm %>%
+                  t() %>%
+                  as.data.frame() %>%
+                  purrr::set_names(as.character(slice(., 1))) %>%
+                  slice(-1) %>%
+                  rownames_to_column("gene_id")
+                ) %>%
+        select(-gene) %>%
+        column_to_rownames("gene_id") %>%
+        mutate_if(is.character, as.numeric) %>%
+        t() %>%
+        as.data.frame(),
+       by = "row.names",
+      all = TRUE
+) %>%
+  rename(group = `Row.names`) %>%
+  mutate(group = if_else(grepl("norm", group), "normal tissue",
+                            if_else(grepl("ct", group), "cancer tissue", "cancer cell line")))
+
+
+# function to return p-value from lm object
+lmp <- function (modelobject) {
+    if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+    f <- summary(modelobject)$fstatistic
+    p <- pf(f[1],f[2],f[3],lower.tail=F)
+    attributes(p) <- NULL
+    return(p)
+}
+
+
+# Run lm test on all genes against group
+no_correction <- list()
+correction <- list()
+for (i in names(down_lm_data[4:length(names(down_lm_data))])){
+  no_correction[i] <- lmp(lm(get(i) ~ group, down_lm_data))
+  correction[i] <- lmp(lm(get(i) ~ group + PC1 + PC2, down_lm_data))
+}
+
+
+# extract p-values for all genes and merge back to down genes list to see gene name with p-values together
+
+down_gene_pvals <- merge(
+  x = down_genes,
+  
+  y = rbind(no_correction %>% 
+        as.data.frame(), 
+      correction %>% 
+        as.data.frame()
+      )%>%
+  t() %>%
+  as.data.frame() %>%
+  rename("Non PC Corrected p-value" = V1,
+         "PC Corrected p-value" = V2) %>%
+  rownames_to_column("gene_id")
+)
+
+```
+
+```{r}
+format(down_gene_pvals[order(`Non PC Corrected p-value`)], scientific = F) %>% as.data.frame()
+```
