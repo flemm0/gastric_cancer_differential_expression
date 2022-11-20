@@ -1,0 +1,48 @@
+```{r}
+library(readxl)
+library(tidytext)
+library(tidyverse)
+```
+
+```{r}
+df_up %>%
+  filter(`# Molecules` %between% c(10, 50)) %>%
+  select(`Diseases or Functions Annotation`, Molecules, `# Molecules`)
+```
+
+
+```{r fig.width = 8, fig.height = 10}
+df_up <- read_xls("./IPA-results/up-genes_diseases_and_functions.xls", col_names = TRUE)
+
+
+nrow(df_up)
+
+df_up %>%
+  unnest_tokens(genes, Molecules) %>%
+  mutate(genes = toupper(genes)) %>%
+  count(genes) %>%
+  arrange(desc(n)) 
+```
+
+```{r}
+df_down <- read_xls("./IPA-results/down-genes_diseases_and_functions.xls", col_names = TRUE)
+
+df_down %>%
+  unnest_tokens(genes, Molecules) %>%
+  mutate(genes = toupper(genes)) %>%
+  count(genes, `Diseases or Functions Annotation`) %>%
+  bind_tf_idf(genes, `Diseases or Functions Annotation`, n) %>%
+  arrange(desc(tf_idf))
+```
+```{r}
+df_down %>%
+  unnest_tokens(genes, Molecules) %>%
+  mutate(genes = toupper(genes)) %>%
+  group_by(genes) %>% 
+  mutate(disease_pathways = paste0(`Diseases or Functions Annotation`, collapse = ", ")) %>%
+  select(genes, disease_pathways) 
+```
+```{r}
+df_down
+```
+
