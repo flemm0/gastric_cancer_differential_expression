@@ -1,32 +1,219 @@
-# Exploring the gene_exp.diff data from cuffdiff with stats turned on
+---
+title: "GI Cancer Gene Expression Data Visualization"
+author: "Flemming Wu"
+---
 
-```{r message = FALSE}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.height=6, fig.width=8, fig.align='center')
+knitr::opts_chunk$set(tidy.opts = list(width.cutoff = 60), tidy = TRUE)
+rm(list=ls())
+```
+
+```{r load libraries, message = FALSE, warning=FALSE}
 library(tidyverse)
 library(data.table)
 library(ggfortify)
 library(ggplot2)
 library(factoextra)
-if (!require(ComplexHeatmap)) { BiocManager::install("ComplexHeatmap") }
 library(ComplexHeatmap)
 library(pvclust)
 library(parallel)
 library(dendextend)
+library(scales)
+library(DiagrammeR)
+library(gridExtra)
+```
+
+#### Plot Read Counts For all 8 Samples
+
+```{r pre-alignment metric plot, fig.width=10}
+samples <- c("SRR585570", "SRR585571", "SRR585572", "SRR585573", "SRR585574", "SRR585575", "SRR585576", "SRR585577")
+
+reads <- c(18883105, 16580585, 27917182, 34687136, 32772474, 34049244, 31929290, 32457417)
+
+groups <- c("normal gastric tissue", "normal gastric tissue", "gastric cancer tissue", "gastric cancer tissue", "gastric cancer tissue", "gastric cancer cell line", "gastric cancer cell line", "gastric cancer cell line")
+
+df <- data.frame(samples, reads, groups)
+#df
+
+df %>%
+  ggplot(aes(y = reads, x = samples)) + 
+  geom_col(aes(fill = groups)) +
+  scale_fill_manual(values=c("#23E7F7",
+                             "#2336F7",
+                             "#EEF51F")) +
+  scale_y_continuous(labels = scales::comma) +
+  geom_hline(yintercept = mean(reads), color = "red", linetype = "dotted") + 
+  geom_text(aes(label = format(reads, big.mark = ",")), position = position_dodge(width = 1), vjust = -0.5) +
+  labs(caption = paste(paste("Minimum reads:", format(min(reads), big.mark = ","), sep = " "),
+                       paste("Average reads:", format(mean(reads), big.mark = ","), sep = " "),
+                       paste("Maximum reads:", format(max(reads), big.mark = ","), sep = " "),
+                       sep = "   "),
+       x = "Sample",
+       y = "Number of Reads",
+       fill = "Group"
+  ) +
+  theme(plot.caption.position = "plot")
+
+```
+
+#### Draw flowchart describing general bioinformatic workflow
+
+```{r Flowchart of bioinformatic workflow}
+grViz("digraph flowchart {
+      # node definitions with substituted label text
+      node [fontname = Arial, shape = rectangle, color = Lavender, style = filled]        
+      tab1 [label = '@@1']
+      tab2 [label = '@@2']
+      tab3 [label = '@@3']
+      tab4 [label = '@@4']
+      tab5 [label = '@@5']
+      tab6 [label = '@@6']
+      tab7 [label = '@@7']
+      tab8 [label = '@@8']
+      tab9 [label = '@@9']
+
+      # edge definitions with the node IDs
+      tab1 -> tab3;
+      tab2 -> tab3;
+      tab3 -> tab4; 
+      tab3 -> tab5;
+      tab4 -> tab6;
+      tab4 -> tab7;
+      tab6 -> tab8;
+      tab7 -> tab9;
+      }
+
+      [1]: 'Download read (FASTQ) files from SRA using SRA-Toolkit'
+      [2]: 'Download reference genome (FASTA) and annotation (GTF) files from Ensembl'
+      [3]: 'Build index with Bowtie2'
+      [4]: 'Align reads to whole genome using Tophat2 (BAM)'
+      [5]: 'Align reads to whole transcriptome using Tophat2 (BAM)'
+      [6]: 'Obtain FPKM values using Cuffdiff with statistics turned off'
+      [7]: 'Obtain p-values and log2 fold differences between normal and cancer tissue using Cuffdiff with statistics on'
+      [8]: 'Output file: genes.fpkm_tracking'
+      [9]: 'Output file: gene_exp.diff'
+      ")
+```
+
+#### Post-Tophat2 Alignment Metrics
+
+```{r alignment metrics, fig.width=9}
+df <- df %>%
+  mutate(input = c(37766210, 33161170, 55834364, 69374272, 65544948, 68098488, 63858580, 64914834),
+         mapped = c(31498668, 27402515, 45797812, 58072751, 52477113, 55003238, 42375461, 44831741),
+         pct_mapped = round(mapped/input * 100, 1)
+         )
+
+df %>%
+  ggplot(aes(y = pct_mapped, x = samples)) + 
+  geom_col(aes(fill = groups)) +
+  scale_fill_manual(values=c("#23E7F7", "#2336F7", "#EEF51F")) +
+  geom_text(aes(label = paste(pct_mapped, "%", sep = " ")), position = position_dodge(width = 1), vjust = -0.5) +
+  labs(x = "Sample",
+       y = "Percent of Reads Aligned to Genome",
+       fill = "Group")
 ```
 
 
-```{r read in dataset}
-#setwd("~/Desktop/TRGN514/rnaseq_proj/")
+#### PCA analysis on all genes across all samples
+
+```{r read in and process data}
+fpkm <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
+
+names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names that were incorrectly named in Cuffdiff command
+  str_replace("ct2", "ct3")
+
+
+fpkm <- fpkm %>% 
+  select(tracking_id, ends_with("_FPKM"))
+
+row.names(fpkm) <- fpkm$tracking_id
+
+fpkm <- fpkm %>% select(ends_with("FPKM"))
+
+fpkm <- t(fpkm)
+
+# normalize everything using log10 conversion
+fpkm_norm <- fpkm + 0.1
+
+fpkm_norm <- log10(fpkm_norm)
+
+# create sample column for labeling
+fpkm_norm <- as.data.frame(fpkm_norm)
+fpkm_norm$samples <- row.names(fpkm_norm)
+
+fpkm_norm.data <- fpkm_norm[-ncol(fpkm_norm)]
+
+fpkm_norm$type <- ifelse(grepl("norm", fpkm_norm$samples), "normal tissue",
+                            ifelse(grepl("ct", fpkm_norm$samples), "cancer tissue", "cancer cell line"))
+
+```
+
+
+```{r plot pca and edit to scale, fig.width=7}
+pca <- prcomp(fpkm_norm.data, scale. = FALSE)
+
+pca$x
+
+autoplot(pca, scale = FALSE, data = fpkm_norm, colour = "type") + ggtitle("PCA") + theme_bw()
+```
+
+#### Boxplots for all gene FPKM values across all samples
+
+```{r prepare data for boxplot}
+df <- as.data.frame(fpkm)
+df <- df[colSums(df) > 0] # filter out genes with 0 expression across all samples
+df <- df + 0.1
+df <- log10(df)
+```
+
+```{r fpkm boxplots of all samples across all genes}
+df %>%
+  t() %>%
+  reshape::melt() %>%
+  arrange(X1) %>%
+  rename(sample = X2) %>%
+  mutate(group = ifelse(grepl("norm", sample), "normal tissue", ifelse(grepl("ct", sample), "cancer tissue", "cancer cell line"))) %>%
+  ggplot(aes(x = sample, y = value, fill = group)) + 
+  geom_boxplot() + 
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  labs(x = "Sample", y = "log10(FPKM)", fill = "Group") +
+  theme_bw()
+```
+
+#### Diagram on filtering criteria for Integrated Pathway Analysis
+
+```{r gene filtering}
+grViz(diagram = "digraph flowchart {
+      # define node aesthetics
+      node [fontname = Arial, shape = rect, color = DeepSkyBlue, style = filled, fontcolor = White]        
+      tab1 [label = '@@1']
+      tab2 [label = '@@2']
+      tab3 [label = '@@3']
+      tab4 [label = '@@4']
+      tab5 [label = '@@5']
+# set up node layout
+      tab1 -> tab2;
+      tab2 -> tab3;
+      tab3 -> tab4;
+      tab3 -> tab5
+      }
+      [1]: 'Initial Number of Genes: 62,635'
+      [2]: 'Filter p-value < 0.001 and log2 fold change < -5 or > 5'
+      [3]: '280 Genes Remaining'
+      [4]: '198 Genes Downregulated'
+      [5]: '82 Genes Upregulated'
+      ")
+```
+
+Perform filtering of genes according to the above diagram
+
+```{r read in expression differences file and filter}
 
 exp <- data.table::fread("./data/gene_exp.diff", sep = "\t")
-```
 
-```{r}
-head(exp)
-tail(exp)
-dim(exp) #62635 tests (number of genes tested)
-```
-
-```{r filter dataset}
 # the cutoff will be p-val of < 0.001 and log2 fold change greater than 5 or less than -5
 
 exp_filt <- exp %>%
@@ -37,13 +224,9 @@ exp_filt <- exp %>%
   filter(`log2(fold_change)` <= -5 | `log2(fold_change)` >= 5)
 ```
 
+Separate up and down regulated genes
 
-```{r check data}
-nrow(exp_filt)
-head(exp_filt)
-```
-
-```{r}
+```{r separate upregulated and downregulated genes}
 up_genes <- exp_filt %>%
   filter(`log2(fold_change)` > 0) %>%
   select(gene_id, gene)
@@ -54,84 +237,8 @@ down_genes <- exp_filt %>%
 ```
 
 
-FPKM
 
-```{r}
-fpkm <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
-
-names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names
-  str_replace("ct2", "ct3")
-
-
-fpkm <- fpkm %>% 
-  select(tracking_id, ends_with("_FPKM"))
-```
-
-
-```{r pca preprocessing}
-row.names(fpkm) <- fpkm$tracking_id
-
-fpkm <- fpkm %>% select(ends_with("FPKM"))
-
-fpkm <- t(fpkm)
-
-# normalize everything using log conversion
-fpkm_norm <- fpkm + 0.1
-
-fpkm_norm <- log10(fpkm_norm)
-
-# create sample column for labeling
-fpkm_norm <- as.data.frame(fpkm_norm)
-fpkm_norm$samples <- row.names(fpkm_norm)
-
-fpkm_norm.data <- fpkm_norm[-ncol(fpkm_norm)]
-```
-
-```{r}
-fpkm_norm$type <- ifelse(grepl("norm", fpkm_norm$samples), "normal tissue",
-                            ifelse(grepl("ct", fpkm_norm$samples), "cancer tissue", "cancer cell line"))
-
-```
-
-
-```{r plot pca edit to scale}
-pca <- prcomp(fpkm_norm.data, scale. = FALSE)
-
-pca$x
-
-autoplot(pca, scale = FALSE, data = fpkm_norm, colour = "type") + ggtitle("PCA unfiltered")
-```
-
-
-
-Plot PCA
-```{r plot pca no edits to scale, eval=FALSE}
-autoplot(prcomp(fpkm_norm.data), data = fpkm_norm, colour = "type")
-```
-
-
-Boxplots for all gene FPKM values across all samples
-
-```{r fpkm boxplots of all samples across all genes}
-df <- t(fpkm) %>%
-  as.data.frame()
-
-df <- df[rowSums(df)>0,] #remove genes with 0 expression across all samples
-
-df <- df + 0.1
-
-
-group.colors <- c(norm1_FPKM = "#2D95F6", norm2_FPKM = "#2D95F6", 
-                  ct1_FPKM = "#FFFB14", ct2_FPKM = "#FFFB14", ct3_FPKM = "#FFFB14", 
-                  ccl1_FPKM = "#FE2323", ccl2_FPKM = "#FE2323", ccl3_FPKM = "#FE2323")
-
-reshape2::melt(df) %>%
-  ggplot(aes(x = variable, y = log10(value), fill = variable)) +
-  geom_boxplot() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  scale_fill_manual(values = group.colors)
-```
-
-PCA with filtered genes only
+#### PCA with filtered genes only
 
 ```{r redo PCA with filtered genes only}
 fpkm_filt <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
@@ -163,7 +270,7 @@ pca2 <- prcomp(fpkm_filt_norm.data)
 
 pca2$x
 
-autoplot(pca2, scale = FALSE, data = fpkm_filt_norm, colour = "type") + ggtitle("PCA on Filtered Genes")
+autoplot(pca2, scale = FALSE, data = fpkm_filt_norm, colour = "type") + ggtitle("PCA on Filtered Genes") + theme_bw()
 ```
 
 Compute Dendrograms
@@ -173,18 +280,40 @@ Use pearson correlation for distance and ward.D2 and complete for clustering met
 ```{r Dendrogram of differentially expressed genes ward method, warning = FALSE}
 rownames(fpkm_filt_norm.data) <- fpkm_filt_norm$sample
 
+# try pearson correlation and euclidean distance for distance measures
 res.pearson.dist <- get_dist(fpkm_filt_norm.data, method = "pearson")
 res.euclidean.dist <- get_dist(fpkm_norm.data, method = "euclidean")
 
-res.ward.hc <- hclust(d = res.euclidean.dist, method = "ward.D2")
-fviz_dend(res.ward.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE,
-          main = paste("Method:", "ward.D2", sep = " "))
+# try ward and complete hierarchical clustering methods
+res.eucl.ward.hc <- hclust(d = res.euclidean.dist, method = "ward.D2")
+res.eucl.complete.hc <- hclust(d = res.euclidean.dist, method = "complete")
+res.pear.ward.hc <- hclust(d = res.pearson.dist, method = "ward.D2")
+res.pear.complete.hc <- hclust(d = res.pearson.dist, method = "complete")
 
 
-res.complete.hc <- hclust(d = res.euclidean.dist, method = "complete")
-fviz_dend(res.complete.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE,
-          main = paste("Method:", "complete", sep = " "))
+p1 <- fviz_dend(res.pear.ward.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE,
+          main = paste("Distance:", "pearson", "Method:", "ward.D2", sep = " "))
+
+
+p2 <- fviz_dend(res.pear.complete.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE,
+          main = paste("Distance:", "pearson", "Method:", "complete", sep = " "))
+
+p3 <- fviz_dend(res.eucl.ward.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE,
+          main = paste("Distance:", "euclidean", "Method:", "ward.D2", sep = " "))
+
+p4 <- fviz_dend(res.eucl.complete.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE,
+          main = paste("Distance:", "euclidean", "Method:", "complete", sep = " "))
+
+grid.arrange(p1, p2, p3, p4)
 ```
+
+It appears that using euclidean distance along with Ward's method gives us the clustering that we expect to see given our knowledge of the three groups.
+
+```{r visualize p3}
+fviz_dend(res.eucl.ward.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE, rect = TRUE, rect_fill = TRUE, show_labels = TRUE,
+          main = "Hierarchical Clustering of Samples Based on Filtered Genes", xlab = "Samples")
+```
+
 
 
 
@@ -196,52 +325,99 @@ n.cores <- detectCores()*3/4
 cl <- makePSOCKcluster(n.cores)
 clusterSetRNGStream(cl, 1234)
 
-# calculate p-value dendrogram for ward.d2 method
-res.ward.pv <- parPvclust(cl, t(fpkm_filt_norm.data), method.hclust = "ward.D2", method.dist = "correlation", nboot = 1000)
+# calculate p-value dendrogram for pearson correlation and ward.d2 method
+res.pear.ward.pv <- parPvclust(cl, t(fpkm_filt_norm.data), method.hclust = "ward.D2", method.dist = "correlation", nboot = 1000)
+# calculate p-value dendrogram for pearson correlation and complete method
+res.pear.complete.pv <- parPvclust(cl, t(fpkm_filt_norm.data), method.hclust = "complete", method.dist = "correlation", nboot = 1000)
+# calculate p-value dendrogram for euclidean dist and ward.d2 method
+res.eucl.complete.pv <- parPvclust(cl, t(fpkm_filt_norm.data), method.hclust = "ward.D2", method.dist = "euclidean", nboot = 1000)
+
+stopCluster(cl)
 
 # plot
-plot(res.ward.pv, hang = -1, cex = 0.5)
+p1 <- plot(res.pear.ward.pv, hang = -1, cex = 0.5)
+p2 <- plot(res.pear.complete.pv, hang = -1, cex = 0.5)
+p3 <- plot(res.eucl.complete.pv, hang = -1, cex = 0.5)
 
 # Clusters with AU >= 95% are considered to be strongly supported by data.
 ```
 
-```{r p-values for complete clustering}
-n.cores <- detectCores()*3/4
-cl <- makePSOCKcluster(n.cores)
-clusterSetRNGStream(cl, 1234)
+Above, it appears that using pearson correlation and complete clustering method clustered ccl3_FPKM poorly. The AU values for using both pearson and euclidean along with Ward's method gave stronger AU values.
 
-# calculate p-value dendrogram for complete method
-res.complete.pv <- parPvclust(cl, t(fpkm_filt_norm.data), method.hclust = "complete", method.dist = "correlation", nboot = 1000)
-stopCluster(cl)
 
-# plot
-plot(res.complete.pv, hang = -1, cex = 0.5)
-
-```
-
-```{r}
-dend1 <- as.dendrogram(res.complete.hc)
-dend2 <- as.dendrogram(res.ward.hc)
+```{r view tanglegram of top clusters}
+dend1 <- as.dendrogram(res.pear.ward.hc)
+dend2 <- as.dendrogram(res.eucl.ward.hc)
 
 dendlist(dend1, dend2) %>%
   untangle(method = "step1side") %>%
-  tanglegram(main_left = "complete", main_right = "ward.D2")
+  tanglegram(main_left = "Pearson Correlation", main_right = "Euclidean Distance", 
+             main = "Ward.D2", lwd = 1, cex_main = 1, margin_inner = 5)
 ```
 
+Using pearson correlation for distance metric instead of euclidean results in cancer cell line 2 clustering with the normal tissues instead of with the other cancer cell line samples. I have determined that using euclidean distance and ward's method to be the best choices with my data.
 
 
-
-```{r heatmap complete}
-Heatmap(fpkm_filt_norm.data, 
-        show_column_names = FALSE,
-        row_split = 3)
-```
-
+#### Plot Heatmap
 
 ```{r heatmap wards}
 Heatmap(fpkm_filt_norm.data, 
         name = "expression",
         show_column_names = FALSE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2")
+```
+
+
+Heatmap of down-regulated pathway
+
+I will look at the "metabolism of carbohydrates" pathway, which is downregulated in gi cancer.
+
+```{r eval=FALSE}
+met <- read_xls("./IPA-results/down-genes_diseases_and_functions.xls", col_names = TRUE) %>%
+  filter(`Diseases or Functions Annotation` == "Metabolism of carbohydrate") %>%
+  unnest_tokens(genes, Molecules) %>%
+  mutate(genes = toupper(genes)) %>%
+  select(genes)
+
+met 
+```
+
+```{r reread in fpkm values,eval=FALSE}
+fpkm <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
+
+names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names
+  str_replace("ct2", "ct3")
+
+
+fpkm <- fpkm %>% 
+  select(gene_short_name, ends_with("_FPKM"))
+
+met <- merge(x = met,
+      y = fpkm, 
+      all.x = TRUE,
+      all.y = FALSE,
+      by.x = "genes",
+      by.y = "gene_short_name")
+```
+
+
+
+```{r normalize,eval=FALSE}
+met <- met %>% 
+  column_to_rownames("genes") %>% 
+  t()
+
+met_norm <- log10(met + 0.1)
+```
+
+
+
+```{r Heatmap of normalized metabolism pathway fpkms,eval=FALSE}
+Heatmap(met_norm, 
+        name = "expression",
+        show_column_names = TRUE, 
         row_split = 3, 
         clustering_method_rows = "ward.D2",
         clustering_method_columns = "ward.D2")
