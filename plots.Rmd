@@ -362,12 +362,15 @@ Using pearson correlation for distance metric instead of euclidean results in ca
 
 ```{r heatmap wards}
 Heatmap(fpkm_filt_norm.data, 
-        name = "expression",
+        name = "Expression",
         show_column_names = FALSE, 
         row_split = 3, 
         clustering_method_rows = "ward.D2",
         clustering_method_columns = "ward.D2")
 ```
+
+
+
 
 
 Heatmap of down-regulated pathway
