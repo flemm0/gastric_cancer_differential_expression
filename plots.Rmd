@@ -25,6 +25,7 @@ library(DiagrammeR)
 library(gridExtra)
 library(tidytext)
 library(readxl)
+library(circlize)
 ```
 
 #### Plot Read Counts For all 8 Samples
@@ -542,17 +543,36 @@ meta_pval <- meta_pval %>%
 
 ```
 
+
+Plot p-values for each gene's significance in determining difference between cancer and non cancer
+
 ```{r plot p-values, message=FALSE}
 meta_pval %>%
   reshape::melt() %>%
   #mutate(value = as.numeric(value)) %>%
   arrange(gene) %>%
   ggplot(aes(x = forcats::fct_reorder(factor(gene), value), y = value)) +
-  geom_bar(aes(fill = variable), stat = "identity", position = "dodge") +
+  geom_bar(aes(fill = variable), stat = "identity", position = "dodge", width = 0.5) +
+  scale_fill_manual(values = c("#1B32FA", "#FA871B")) + 
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
-  geom_hline(yintercept = 0.05) +
+  geom_hline(yintercept = 0.05, linetype = "dashed") +
   labs(y = "p-value", x = "gene")
 ```
+
+Plot heatmap of carbohydrate gene expression
+
+```{r heatmap of carbohydrate metabolism pathway}
+Heatmap(meta_norm,
+        name = "expression",
+        show_column_names = TRUE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2") + 
+  rowAnnotation(`log10(fpkm)` = anno_boxplot(meta_norm)) +
+  rowAnnotation(rn = anno_text(rownames(meta_norm)))
+```
+
+
 
 It appears that after correcting for the first two principal components, all genes except for CD22, B3GNT8, B3GAT1, and ALDH1A1 are significant.
 
@@ -587,30 +607,51 @@ I have selected three genes of interest to me: GPD1, GCNT4, and SLC24A for furth
 summary(lm(GPD1 ~ group, lm_df))
 ```
 
-
-
-```{r boxplots of GPD1 GCNT4 and SLC2A4, fig.height=12}
+```{r barplots of individual genes, fig.height=12, fig.width=12}
 p1 <- lm_df %>%
-  ggplot(aes(x = forcats::fct_reorder(factor(group), GPD1), y = GPD1, color = group)) +
-  geom_boxplot(alpha = 0.5) +
-  labs(y = "log10(FPKM)", x = "Group", title = "GPD1")
-
+  select(group, GPD1) %>%
+  group_by(group) %>%
+  summarise(mean = mean(GPD1), sd = sd(GPD1)) %>%
+  ggplot(aes(x = forcats::fct_reorder(factor(group), mean), y = mean, fill = group)) +
+  geom_col() +
+  geom_errorbar(aes(x = group, ymin = mean - sd, ymax = mean + sd), width=0.4, colour="orange", alpha=0.9, size=1.3) +
+  geom_text(aes(label = paste("Average log10(fpkm):", round(mean, 2), sep = " "),
+                hjust = 0.5,
+                vjust = ifelse(mean < 0, 5.5, -2.5)),
+            size = 3) +
+  geom_hline(yintercept = 0) +
+  ylim(-2, 2) +
+  labs(x = "", y = "Average log(10) FPKM", title = "GPD1") +
+  annotate("text", label = paste("p-value:", round(lmp(lm(GPD1 ~ group, lm_df)), 6), sep = " "), x = 2, y = 2)
 
 p2 <- lm_df %>%
-  ggplot(aes(x = forcats::fct_reorder(factor(group), GCNT4), y = GCNT4, color = group)) +
-  geom_boxplot(alpha = 0.5) +
-  labs(y = "log10(FPKM)", x = "Group", title = "GCNT4")
+  select(group, SLC2A4) %>%
+  group_by(group) %>%
+  summarise(mean = mean(SLC2A4), sd = sd(SLC2A4)) %>%
+  ggplot(aes(x = forcats::fct_reorder(factor(group), mean), y = mean, fill = group)) +
+  geom_col() +
+  geom_errorbar(aes(x = group, ymin = mean - sd, ymax = mean + sd), width=0.4, colour="orange", alpha=0.9, size=1.3) +
+  geom_text(aes(label = paste("Average log10(fpkm):", round(mean, 2), sep = " "),
+                hjust = 0.5,
+                vjust = ifelse(mean < 0, 5.5, -2.5)),
+            size = 3) +
+  geom_hline(yintercept = 0) +
+  ylim(-2, 2) +
+  labs(x = "", y = "Average log(10) FPKM", title = "SLC2A4") +
+  annotate("text", label = paste("p-value:", round(lmp(lm(SLC2A4 ~ group, lm_df)), 6), sep = " "), x = 2, y = 2)
 
 
-p3 <- lm_df %>%
-  ggplot(aes(x = forcats::fct_reorder(factor(group), SLC2A4), y = SLC2A4, color = group)) +
-  geom_boxplot(alpha = 0.5) +
-  labs(y = "log10(FPKM)", x = "Group", title = "SLC2A4")
-
-grid.arrange(p1, p2, p3)
+grid.arrange(p1, p2, ncol = 1)
 ```
 
-```{r annotated heatmap with p-value annotations, warning=FALSE}
+
+
+
+
+
+
+
+```{r annotated heatmap with p-value annotations, warning=FALSE, include=FALSE, eval=FALSE}
 # add p-values as column annotations
 
 h1 <- Heatmap(meta_norm,
@@ -633,7 +674,7 @@ pch <- rep("*", length(pvals))
 pch[!is_sig] <- NA
 
 # color mapping for p-values
-pvalue_col_fun <- colorRamp2(c(0, 2, 3), c("green", "white", "red")) 
+pvalue_col_fun <- colorRamp2(c(0, 2, 3), c("yellow", "white", "red")) 
 
 
 ha <- HeatmapAnnotation(
@@ -651,8 +692,8 @@ ht2 <- Heatmap(meta_norm,
   rowAnnotation(rn = anno_text(rownames(meta_norm)))
 
 # define legend for p-value
-lgd_pvalue <- Legend(title = "p-value", col_fun = pvalue_col_fun, at = c(0, 1, 2, 3), 
-    labels = c("0.2", "0.002", "0.0002", "0.0001"))
+lgd_pvalue <- Legend(title = "p-value", col_fun = pvalue_col_fun, at = c(0, 1, 2, 3, 4), 
+    labels = c("0.5", "0.05", "0.01", "0.001", "0.0001"))
 
 # legend for significant p-values
 lgd_sig <- Legend(pch = "*", type = "points", labels = "< 0.05")
