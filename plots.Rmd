@@ -584,25 +584,25 @@ It appears that after correcting for the first two principal components, all gen
 I have selected three genes of interest to me: GPD1, GCNT4, and SLC24A for further analysis.
 
 ```{r}
-summary(lm(GPD1 ~ group, meta_norm))
+summary(lm(GPD1 ~ group, lm_df))
 ```
 
 
 
 ```{r boxplots of GPD1 GCNT4 and SLC2A4, fig.height=12}
-p1 <- meta_norm %>%
+p1 <- lm_df %>%
   ggplot(aes(x = forcats::fct_reorder(factor(group), GPD1), y = GPD1, color = group)) +
   geom_boxplot(alpha = 0.5) +
   labs(y = "log10(FPKM)", x = "Group", title = "GPD1")
 
 
-p2 <- meta_norm %>%
+p2 <- lm_df %>%
   ggplot(aes(x = forcats::fct_reorder(factor(group), GCNT4), y = GCNT4, color = group)) +
   geom_boxplot(alpha = 0.5) +
   labs(y = "log10(FPKM)", x = "Group", title = "GCNT4")
 
 
-p3 <- meta_norm %>%
+p3 <- lm_df %>%
   ggplot(aes(x = forcats::fct_reorder(factor(group), SLC2A4), y = SLC2A4, color = group)) +
   geom_boxplot(alpha = 0.5) +
   labs(y = "log10(FPKM)", x = "Group", title = "SLC2A4")
