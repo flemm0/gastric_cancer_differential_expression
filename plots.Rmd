@@ -23,6 +23,8 @@ library(dendextend)
 library(scales)
 library(DiagrammeR)
 library(gridExtra)
+library(tidytext)
+library(readxl)
 ```
 
 #### Plot Read Counts For all 8 Samples
@@ -370,24 +372,27 @@ Heatmap(fpkm_filt_norm.data,
 ```
 
 
+At this point, I submitted the list of up regulated and down regulated genes to do a simple integrated pathway analysis (software from QIAGEN). There were many significant pathways returned, many of the down regulated ones were involved in immune system function whereas many of the up regulated pathways have been previously implicated in cancer. The excel files are located in the IPA-results folder.
+
+Moving forward, I will be looking at individual genes that are involved in a specific pathway of interest to me, carbohydrate metabolism, which was down regulated in cancerous samples, compared to normal samples.
 
 
 
-Heatmap of down-regulated pathway
+#### Heatmap of carbohydrate metabolism pathway.
 
 I will look at the "metabolism of carbohydrates" pathway, which is downregulated in gi cancer.
 
-```{r eval=FALSE}
-met <- read_xls("./IPA-results/down-genes_diseases_and_functions.xls", col_names = TRUE) %>%
+```{r get list of genes in metabolism of carbohydrates pathway}
+meta <- read_xls("./IPA-results/down-genes_diseases_and_functions.xls", col_names = TRUE) %>%
   filter(`Diseases or Functions Annotation` == "Metabolism of carbohydrate") %>%
   unnest_tokens(genes, Molecules) %>%
   mutate(genes = toupper(genes)) %>%
   select(genes)
 
-met 
+meta
 ```
 
-```{r reread in fpkm values,eval=FALSE}
+```{r create df containing FPKM values for genes in carbohydrate metabolism pathway}
 fpkm <- data.table::fread("./data/genes.fpkm_tracking", sep = "\t")
 
 names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names
@@ -397,28 +402,24 @@ names(fpkm)[26:29] <- names(fpkm)[26:29] %>% # fix column names
 fpkm <- fpkm %>% 
   select(gene_short_name, ends_with("_FPKM"))
 
-met <- merge(x = met,
+meta <- merge(x = meta,
       y = fpkm, 
       all.x = TRUE,
       all.y = FALSE,
       by.x = "genes",
       by.y = "gene_short_name")
-```
 
 
-
-```{r normalize,eval=FALSE}
-met <- met %>% 
+meta <- meta %>% 
   column_to_rownames("genes") %>% 
   t()
 
-met_norm <- log10(met + 0.1)
+
+meta_norm <- log10(meta + 0.1)
 ```
 
-
-
-```{r Heatmap of normalized metabolism pathway fpkms,eval=FALSE}
-Heatmap(met_norm, 
+```{r simple heatmap of normalized metabolism pathway fpkms}
+Heatmap(meta_norm, 
         name = "expression",
         show_column_names = TRUE, 
         row_split = 3, 
@@ -426,8 +427,235 @@ Heatmap(met_norm,
         clustering_method_columns = "ward.D2")
 ```
 
+```{r annotated heatmap, warning=FALSE}
+Heatmap(meta_norm, 
+        name = "expression",
+        show_column_names = TRUE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2") + 
+  rowAnnotation(`log10(fpkm)` = anno_boxplot(meta_norm)) +
+  rowAnnotation(rn = anno_text(rownames(meta_norm)))
+```
 
 
 
+Using the same clustering method (euclidean distance and ward.D2 method) it appears that cancer cell line 2 becomes its own cluster, and cancer cell lines 1 and 3 cluster with the cancer tissue.
+
+```{r other clustering method testing}
+# compare other clustering methods with original to check to see if it is still the best method for the selected pathway
+
+# original clustering method
+ht1 <- Heatmap(meta_norm, 
+        name = "ht1",
+        show_column_names = TRUE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2")
 
 
+# pearson correlation with ward.D2 clustering
+ht2 <- Heatmap(meta_norm, 
+        name = "ht2",
+        show_column_names = TRUE, 
+        row_split = 3,
+        clustering_distance_rows = "pearson",
+        clustering_distance_columns = "pearson",
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2",
+        column_names_gp = gpar(fontsize = 9))
+
+# euclidean distance with complete clustering 
+
+ht3 <- Heatmap(meta_norm, 
+        name = "ht3",
+        show_column_names = TRUE, 
+        row_split = 3,
+        clustering_distance_rows = "euclidean",
+        clustering_distance_columns = "euclidean",
+        clustering_method_rows = "complete",
+        clustering_method_columns = "complete",
+        column_names_gp = gpar(fontsize = 9))
+
+# pearson correlation with ward.D2 clustering
+
+ht4 <- Heatmap(meta_norm, 
+        name = "ht4",
+        show_column_names = TRUE, 
+        row_split = 3,
+        clustering_distance_rows = "pearson",
+        clustering_distance_columns = "pearson",
+        clustering_method_rows = "complete",
+        clustering_method_columns = "complete",
+        column_names_gp = gpar(fontsize = 9))
+
+ht1 + ht2 + ht3 + ht4
+```
+
+When plotting all 4 heatmaps together with the original heatmap as the main, the separation is clearest with the original. Individually, ht2 makes cell line 3 its own cluster and clusters cell line 2 and cancer tissue 3 with normal, ht2 is similar to original heatmap, and ht3 makes cell line 1 and 3 are their own clusters. I conclude that the original clustering method is still the best option for this pathway.
+
+#### Linear model test on individual genes for significance
+
+```{r add principal components to data frame}
+
+# add PC1 and PC2 to the data frame for correction
+
+lm_df <- merge(x = pca$x, y = meta_norm, by = "row.names") %>%
+  select(-c(4:9)) %>%
+  rename(group = Row.names) %>%
+  mutate(group = if_else(grepl("norm", group), "normal tissue", if_else(grepl("ct", group), "cancer tissue", "cancer cell line")))
+
+lm_df
+```
+
+```{r lm test}
+# function to return p-value from lm object
+lmp <- function (modelobject) {
+    if (class(modelobject) != "lm") stop("Not an object of class 'lm' ")
+    f <- summary(modelobject)$fstatistic
+    p <- pf(f[1],f[2],f[3],lower.tail=F)
+    attributes(p) <- NULL
+    return(p)
+}
+
+
+# lm test on all genes
+no_correction <- list() # initialize empty list to hold p-values for non-corrected lm test
+correction <- list() # empty list to hold p-values for corrected lm test
+for (i in names(lm_df[4:length(names(lm_df))])){
+  no_correction[i] <- lmp(lm(get(i) ~ group, lm_df))
+  correction[i] <- lmp(lm(get(i) ~ group + PC1 + PC2, lm_df))
+}
+
+
+# store results in data frame
+meta_pval <- rbind(as.data.frame(no_correction), as.data.frame(correction)) %>% 
+  t() %>%
+  as.data.frame() %>%
+  rename("Non PC Corrected p-value" = V1, "PC Corrected p-value" = V2) %>%
+  format(scientific = FALSE) %>%
+  rownames_to_column("gene")
+
+meta_pval <- meta_pval %>%
+  mutate(`Non PC Corrected p-value` = as.numeric(`Non PC Corrected p-value`),
+         `PC Corrected p-value` = as.numeric(`PC Corrected p-value`)) 
+
+```
+
+```{r plot p-values, message=FALSE}
+meta_pval %>%
+  reshape::melt() %>%
+  #mutate(value = as.numeric(value)) %>%
+  arrange(gene) %>%
+  ggplot(aes(x = forcats::fct_reorder(factor(gene), value), y = value)) +
+  geom_bar(aes(fill = variable), stat = "identity", position = "dodge") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+  geom_hline(yintercept = 0.05) +
+  labs(y = "p-value", x = "gene")
+```
+
+It appears that after correcting for the first two principal components, all genes except for CD22, B3GNT8, B3GAT1, and ALDH1A1 are significant.
+
+* P2RY6: [promotes tumorigenesis by inhibiting apoptosis](https://pubmed.ncbi.nlm.nih.gov/29454075/)
+
+* PIK3CG: [inhibits PI3K-Akt/PKB signaling system responsible for tumorigenesis and the progression of colorectal cancers](https://pubmed.ncbi.nlm.nih.gov/12473596/)
+
+* **GPD1**: [encodes glycerol-3-phosphate dehydrogenase, which plays a crucial role in carbohydrate and lipid metabolism by catalyzing conversion of DHAP and NADG to G3P (glycerol-3-phosphate) and NAD+.](https://en.wikipedia.org/wiki/Glycerol-3-phosphate_dehydrogenase_1) Has been implicated as a tumor suppressor in [breast cancer](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC5731876/) and [bladder cancer](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9284842/)
+
+* CSFR1: [involved in production, differentiation, and function of macrophages](https://en.wikipedia.org/wiki/Colony_stimulating_factor_1_receptor)
+
+* **GCNT4**: [predicted to be involved in O-glycan processing and carbohydrate metabolic process.](https://www.ncbi.nlm.nih.gov/gene/51301). [Found to be downregulated in gastric cancer](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC7457769/)
+
+* PRKCB: [encodes protein involved in B cell activation, apoptosis induction, endothelial cell proliferation, and intestinal sugar absorption.](https://www.ncbi.nlm.nih.gov/gene/5579) [Previously implicated in colorectal cancer](https://link.springer.com/article/10.1007/s12253-013-9739-5)
+
+* B4GALNT2: [catalyzes last step in biosynthesis of human Sd(a) antigen and Cad antigen.](https://www.genecards.org/cgi-bin/carddisp.pl?gene=B4GALNT2) [Found to be highly expressed in model triple negative breast cancer](https://pubmed.ncbi.nlm.nih.gov/34589428/)
+
+* CEBPA: [encodes transcription factor involved in maturation of certain blood cells and believed to act as a tumor supressor.](https://medlineplus.gov/genetics/gene/cebpa/) [Implicated in acute myeloid leukemia](https://www.frontiersin.org/articles/10.3389/fonc.2022.806137/full)
+
+* SST: [regulator of endocrine system through interactions with pituitary growth hormone, thyroid stimulating hormone, and most hormones of GI tract. Also affects rates of neurotransmission in the CNS and proliferation of normal and tumorigenic cells](https://www.genecards.org/cgi-bin/carddisp.pl?gene=SST)
+
+* **SLC2A4**: [encodes member of K+ dependent Na/Ca exchanger protein family](https://www.genecards.org/cgi-bin/carddisp.pl?gene=SLC24A4) Not many articles on its implications in cancer.
+
+* PTPRC: [known to be signaling molecules that regulate a variety of cellular processes including cell growth, differentiation, mitosis, and oncogenic transformation](https://www.ncbi.nlm.nih.gov/gene/5788)
+
+* GCNT2: [encodes enzyme responsible for formation of blood group I antigen.](https://en.wikipedia.org/wiki/GCNT2) [Hypomethylated in colorectal cancer](https://pubmed.ncbi.nlm.nih.gov/25750292/)
+
+
+I have selected three genes of interest to me: GPD1, GCNT4, and SLC24A for further analysis.
+
+```{r}
+summary(lm(GPD1 ~ group, meta_norm))
+```
+
+
+
+```{r boxplots of GPD1 GCNT4 and SLC2A4, fig.height=12}
+p1 <- meta_norm %>%
+  ggplot(aes(x = forcats::fct_reorder(factor(group), GPD1), y = GPD1, color = group)) +
+  geom_boxplot(alpha = 0.5) +
+  labs(y = "log10(FPKM)", x = "Group", title = "GPD1")
+
+
+p2 <- meta_norm %>%
+  ggplot(aes(x = forcats::fct_reorder(factor(group), GCNT4), y = GCNT4, color = group)) +
+  geom_boxplot(alpha = 0.5) +
+  labs(y = "log10(FPKM)", x = "Group", title = "GCNT4")
+
+
+p3 <- meta_norm %>%
+  ggplot(aes(x = forcats::fct_reorder(factor(group), SLC2A4), y = SLC2A4, color = group)) +
+  geom_boxplot(alpha = 0.5) +
+  labs(y = "log10(FPKM)", x = "Group", title = "SLC2A4")
+
+grid.arrange(p1, p2, p3)
+```
+
+```{r annotated heatmap with p-value annotations, warning=FALSE}
+# add p-values as column annotations
+
+h1 <- Heatmap(meta_norm,
+        name = "expression",
+        show_column_names = TRUE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2") + 
+  rowAnnotation(`log10(fpkm)` = anno_boxplot(meta_norm)) +
+  rowAnnotation(rn = anno_text(rownames(meta_norm)))
+
+pvals <- list()
+for (i in column_order(h1)){
+  pvals <- c(pvals, meta_pval[i, 3])
+}
+
+pvals <- unlist(pvals)
+is_sig <- pvals < 0.05
+pch <- rep("*", length(pvals))
+pch[!is_sig] <- NA
+
+# color mapping for p-values
+pvalue_col_fun <- colorRamp2(c(0, 2, 3), c("green", "white", "red")) 
+
+
+ha <- HeatmapAnnotation(
+    pvalue = anno_simple(pvals, col = pvalue_col_fun, pch = pch),
+    annotation_name_side = "left")
+
+ht2 <- Heatmap(meta_norm,
+        name = "expression",
+        top_annotation = ha,
+        show_column_names = TRUE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2") + 
+  rowAnnotation(`log10(fpkm)` = anno_boxplot(meta_norm)) +
+  rowAnnotation(rn = anno_text(rownames(meta_norm)))
+
+# define legend for p-value
+lgd_pvalue <- Legend(title = "p-value", col_fun = pvalue_col_fun, at = c(0, 1, 2, 3), 
+    labels = c("0.2", "0.002", "0.0002", "0.0001"))
+
+# legend for significant p-values
+lgd_sig <- Legend(pch = "*", type = "points", labels = "< 0.05")
+
+draw(ht2, annotation_legend_list = list(lgd_pvalue, lgd_sig))
+```
