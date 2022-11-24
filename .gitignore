@@ -3,4 +3,6 @@
 *.swp
 *.RData
 *.Rhistory
-IPA-Results/
+lm.Rmd
+plot-testing.Rmd
+IPA-results/*.xlsx
