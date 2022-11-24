@@ -1,6 +1,8 @@
 ---
 title: "GI Cancer Gene Expression Data Visualization"
 author: "Flemming Wu"
+output: github_document
+always_allow_html: true
 ---
 
 
