@@ -364,12 +364,30 @@ Using pearson correlation for distance metric instead of euclidean results in ca
 #### Plot Heatmap
 
 ```{r heatmap wards}
-Heatmap(fpkm_filt_norm.data, 
+Heatmap(data.matrix(fpkm_filt_norm.data), 
         name = "Expression",
         show_column_names = FALSE, 
         row_split = 3, 
         clustering_method_rows = "ward.D2",
         clustering_method_columns = "ward.D2")
+```
+
+
+```{r annotated heatmap wards}
+
+
+boxplot <- rowAnnotation(`log10(fpkm)` = anno_boxplot(data.matrix(fpkm_filt_norm.data)),
+                         gp=gpar(fill="#CCCCCC"))
+
+hmap <- Heatmap(data.matrix(fpkm_filt_norm.data), 
+        name = "Expression",
+        show_column_names = FALSE, 
+        row_split = 3, 
+        clustering_method_rows = "ward.D2",
+        clustering_method_columns = "ward.D2",
+        right_annotation = boxplot)
+
+draw(hmap)
 ```
 
 
