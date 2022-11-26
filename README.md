@@ -18,6 +18,7 @@ library(gridExtra)
 library(tidytext)
 library(readxl)
 library(circlize)
+library(webshot)
 ```
 
 #### Plot Read Counts For all 8 Samples
@@ -91,10 +92,7 @@ grViz("digraph flowchart {
       ")
 ```
 
-    ## PhantomJS not found. You can install it with webshot::install_phantomjs(). If it is installed, please make sure the phantomjs executable can be found via the PATH variable.
-
-<div id="htmlwidget-286df22d1a4db59614d9" style="width:768px;height:576px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-286df22d1a4db59614d9">{"x":{"diagram":"digraph flowchart {\n      # node definitions with substituted label text\n      node [fontname = Arial, shape = rectangle, color = Lavender, style = filled]        \n      tab1 [label = \"Download read (FASTQ) files from SRA using SRA-Toolkit\"]\n      tab2 [label = \"Download reference genome (FASTA) and annotation (GTF) files from Ensembl\"]\n      tab3 [label = \"Build index with Bowtie2\"]\n      tab4 [label = \"Align reads to whole genome using Tophat2 (BAM)\"]\n      tab5 [label = \"Align reads to whole transcriptome using Tophat2 (BAM)\"]\n      tab6 [label = \"Obtain FPKM values using Cuffdiff with statistics turned off\"]\n      tab7 [label = \"Obtain p-values and log2 fold differences between normal and cancer tissue using Cuffdiff with statistics on\"]\n      tab8 [label = \"Output file: genes.fpkm_tracking\"]\n      tab9 [label = \"Output file: gene_exp.diff\"]\n\n      # edge definitions with the node IDs\n      tab1 -> tab3;\n      tab2 -> tab3;\n      tab3 -> tab4; \n      tab3 -> tab5;\n      tab4 -> tab6;\n      tab4 -> tab7;\n      tab6 -> tab8;\n      tab7 -> tab9;\n      }","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<img src="README_files/figure-gfm/Flowchart of bioinformatic workflow-1.png" style="display: block; margin: auto;" />
 
 #### Post-Tophat2 Alignment Metrics
 
@@ -237,8 +235,7 @@ grViz(diagram = "digraph flowchart {
       ")
 ```
 
-<div id="htmlwidget-16570ea1098781111bd7" style="width:768px;height:576px;" class="grViz html-widget"></div>
-<script type="application/json" data-for="htmlwidget-16570ea1098781111bd7">{"x":{"diagram":"digraph flowchart {\n      # define node aesthetics\n      node [fontname = Arial, shape = rect, color = DeepSkyBlue, style = filled, fontcolor = White]        \n      tab1 [label = \"Initial Number of Genes: 62,635\"]\n      tab2 [label = \"Filter p-value < 0.001 and log2 fold change < -5 or > 5\"]\n      tab3 [label = \"280 Genes Remaining\"]\n      tab4 [label = \"198 Genes Downregulated\"]\n      tab5 [label = \"82 Genes Upregulated\"]\n# set up node layout\n      tab1 -> tab2;\n      tab2 -> tab3;\n      tab3 -> tab4;\n      tab3 -> tab5\n      }","config":{"engine":"dot","options":null}},"evals":[],"jsHooks":[]}</script>
+<img src="README_files/figure-gfm/gene filtering-1.png" style="display: block; margin: auto;" />
 
 Perform filtering of genes according to the above diagram
 
@@ -863,7 +860,21 @@ p2 <- lm_df %>%
         group, lm_df)), 6), sep = " "), x = 2, y = 2)
 
 
-grid.arrange(p1, p2, ncol = 1)
+p3 <- lm_df %>%
+    select(group, GCNT4) %>%
+    group_by(group) %>%
+    summarise(mean = mean(GCNT4), sd = sd(GCNT4)) %>%
+    ggplot(aes(x = forcats::fct_reorder(factor(group), mean),
+        y = mean, fill = group)) + geom_col() + geom_errorbar(aes(x = group,
+    ymin = mean - sd, ymax = mean + sd), width = 0.4, colour = "orange",
+    alpha = 0.9, size = 1.3) + geom_text(aes(label = paste("Average log10(fpkm):",
+    round(mean, 2), sep = " "), hjust = 0.5, vjust = ifelse(mean <
+    0, 5.5, -2.5)), size = 3) + geom_hline(yintercept = 0) +
+    ylim(-2, 2) + labs(x = "", y = "Average log(10) FPKM", title = "GCNT4 ") +
+    annotate("text", label = paste("p-value:", round(lmp(lm(GCNT4 ~
+        group, lm_df)), 6), sep = " "), x = 2, y = 2)
+
+grid.arrange(p1, p2, p3, ncol = 2)
 ```
 
 <img src="README_files/figure-gfm/barplots of individual genes-1.png" style="display: block; margin: auto;" />
