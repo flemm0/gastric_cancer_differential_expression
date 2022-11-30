@@ -2,6 +2,15 @@ GI Cancer Gene Expression Data Visualization
 ================
 Flemming Wu
 
+In this project, I used publicly available RNA-Seq data from the Gene
+Expression Omnibus database (accession number GSE41476) to look at how
+differential gene expression between three groups of samples: gastric
+cancer tissue, matched adjacent normal tissue, and gastric cancer cell
+lines.
+
+The pipeline was all done on a HPC server and the commands used for that
+can be found in the “server_commands.sh” file on this repository.
+
 ``` r
 library(tidyverse)
 library(data.table)
@@ -38,20 +47,23 @@ df <- data.frame(samples, reads, groups)
 # df
 
 df %>%
-    ggplot(aes(y = reads, x = samples)) + geom_col(aes(fill = groups)) +
+    ggplot(aes(y = reads/1e+06, x = samples)) + geom_col(aes(fill = groups)) +
     scale_fill_manual(values = c("#23E7F7", "#2336F7", "#EEF51F")) +
-    scale_y_continuous(labels = scales::comma) + geom_hline(yintercept = mean(reads),
-    color = "red", linetype = "dotted") + geom_text(aes(label = format(reads,
-    big.mark = ",")), position = position_dodge(width = 1), vjust = -0.5) +
-    labs(caption = paste(paste("Minimum reads:", format(min(reads),
-        big.mark = ","), sep = " "), paste("Average reads:",
-        format(mean(reads), big.mark = ","), sep = " "), paste("Maximum reads:",
-        format(max(reads), big.mark = ","), sep = " "), sep = "   "),
-        x = "Sample", y = "Number of Reads", fill = "Group") +
-    theme(plot.caption.position = "plot")
+    geom_text(aes(label = format(reads, big.mark = ",")), position = position_dodge(width = 1),
+        vjust = -0.5) + geom_hline(yintercept = mean(reads)/1e+06,
+    color = "black", linetype = "dotted") + geom_text(aes(0,
+    mean(reads)/1e+06, label = paste("Average reads:", format(round(mean(reads)),
+        big.mark = ","), sep = " "), vjust = -1, hjust = 0)) +
+    labs(x = "Sample", y = "Number of Reads (millions)", fill = "Group")
 ```
 
 <img src="README_files/figure-gfm/pre-alignment metric plot-1.png" style="display: block; margin: auto;" />
+
+I determined that I was able to use all 8 samples, since they all had a
+good number of reads for my purposes. The minimum number of reads was
+16.5 million which was in the second normal tissue sample, the maximum
+was 34.6 million which was in my second gastric cancer tissue sample,
+and all 8 samples averaged at 28.6 million reads.
 
 #### Draw flowchart describing general bioinformatic workflow
 
@@ -94,6 +106,29 @@ grViz("digraph flowchart {
 
 <img src="README_files/figure-gfm/Flowchart of bioinformatic workflow-1.png" style="display: block; margin: auto;" />
 
+I first downloaded the SRA files as fastq files using the fasterq-dump
+command from sra-toolkit. I also downloaded the fasta file for the human
+reference genome, version GRCh38, and the GTF file of the genome
+annotation, both of which were from Ensembl.
+
+I then built index files from the reference genome using Bowtie2, which
+will be used to speed up the mapping process. Next, I selected one
+normal tissue sample and one cancer tissue sample to map to the whole
+genome and the whole transcriptome using Tophat2 to see if they mapped
+to one much better. It turned out that the mapping percentages for both
+genome and transcriptome were both at around 80%, so I just mapped the
+rest of my samples to the whole genome.
+
+Once all the reads were mapped, I took my alignment files, or bam files,
+and put them into two different runs of Cuffdiff. In the first run, I
+inputted all 8 of my samples and ran Cuffdiff with statistics turned off
+to get just the read counts of all the genes. The output for this was in
+my genes.fpkm_tracking file. In the second run, I gave Cuffdiff only my
+normal and cancer tissue samples as two groups and ran it with the
+statistics on to get log2 fold change and p-values for the genes just
+between these two groups. The output for this was in the gene_exp.diff
+file.
+
 #### Post-Tophat2 Alignment Metrics
 
 ``` r
@@ -113,6 +148,12 @@ df %>%
 ```
 
 <img src="README_files/figure-gfm/alignment metrics-1.png" style="display: block; margin: auto;" />
+
+Overall, the Tophat alignment was pretty successful. Most of my samples
+have over an 80% mapping rate. The maximum mapping percentage is 83.7%,
+and the two samples on the right in the chart are cancer cell lines 2
+and 3, they had slightly lower mapping rates than the other samples, at
+about 66 and 69%. But, the average across all 8 samples was 78.5%.
 
 #### PCA analysis on all genes across all samples
 
@@ -173,11 +214,25 @@ pca$x
     ## ccl3_FPKM    1.18976097  2.441909e-13
 
 ``` r
-autoplot(pca, scale = FALSE, data = fpkm_norm, colour = "type") +
-    ggtitle("PCA") + theme_bw()
+autoplot(pca, scale = FALSE, data = fpkm_norm, colour = "type",
+    size = 3) + ggtitle("PCA on 40,295 Genes") + theme_bw()
 ```
 
 <img src="README_files/figure-gfm/plot pca and edit to scale-1.png" style="display: block; margin: auto;" />
+
+Once I had my raw read counts, I started out with over 62,000 genes. And
+my first step was to remove genes with 0 expression across all the
+samples, which was about \~22,000 of them, leaving me with about 40,000
+genes. I then normalized the fpkm values by adding a pseudocount of 0.1
+and taking the log base 10 so that genes with really high expression
+levels wouldn’t overshadow the rest of my analysis. And then I made a
+PCA plot of all the \~40,000 genes across all of the samples. You can
+see that the groups clustered together pretty nicely already, with the
+cancer tissue on the right, the normal tissue on the left, and the
+cancer cell lines on the bottom. PC1 accounts for 31.2% of the variance
+in the data set and seems to separate cancer from non-cancer groups. PC2
+accounts for 24.8% of the variance in the data and seems to separate
+tissues and cell lines.
 
 #### Boxplots for all gene FPKM values across all samples
 
@@ -198,8 +253,8 @@ df %>%
         ifelse(grepl("ct", sample), "cancer tissue", "cancer cell line"))) %>%
     ggplot(aes(x = sample, y = value, fill = group)) + geom_boxplot() +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5,
-        hjust = 1)) + labs(x = "Sample", y = "log10(FPKM)", fill = "Group") +
-    theme_bw()
+        hjust = 1)) + labs(x = "Sample", y = "log10(FPKM)", fill = "Group",
+    title = "FPKM Distributions for 40,295 Genes") + theme_bw()
 ```
 
     ## Warning in type.convert.default(X[[i]], ...): 'as.is' should be specified by the
@@ -210,32 +265,50 @@ df %>%
 
 <img src="README_files/figure-gfm/fpkm boxplots of all samples across all genes-1.png" style="display: block; margin: auto;" />
 
+From the plot, it looks like the highest median fpkm is in the normal
+tissue group by just a little bit, but the overall distribution of gene
+expression looks very similar across all 8 samples.
+
 #### Diagram on filtering criteria for Integrated Pathway Analysis
 
 ``` r
 grViz(diagram = "digraph flowchart {
       # define node aesthetics
-      node [fontname = Arial, shape = rect, color = DeepSkyBlue, style = filled, fontcolor = White]        
+      node [fontname = Arial, shape = egg, color = DarkGreen, style = filled, fontcolor = White]        
       tab1 [label = '@@1']
       tab2 [label = '@@2']
       tab3 [label = '@@3']
       tab4 [label = '@@4']
       tab5 [label = '@@5']
+      tab6 [label = '@@6']
+      tab7 [label = '@@7']
 # set up node layout
-      tab1 -> tab2;
+      tab1 -> tab6;
+      tab6 -> tab7;
+      tab7 -> tab2;
       tab2 -> tab3;
       tab3 -> tab4;
       tab3 -> tab5
       }
-      [1]: 'Initial Number of Genes: 62,635'
+      [1]: 'Initial number of genes: 62,635'
       [2]: 'Filter p-value < 0.001 and log2 fold change < -5 or > 5'
-      [3]: '280 Genes Remaining'
-      [4]: '198 Genes Downregulated'
-      [5]: '82 Genes Upregulated'
+      [3]: '280 genes Remaining'
+      [4]: '198 genes downregulated'
+      [5]: '82 genes upregulated'
+      [6]: 'Filter 0 gene expression across all 8 samples'
+      [7]: '40,295 genes remaining'
       ")
 ```
 
 <img src="README_files/figure-gfm/gene filtering-1.png" style="display: block; margin: auto;" />
+
+My next step was to filter genes down based on the log2 fold change and
+p-values so that I could have a manageable number of genes to look at
+for pathway analysis. The cutoffs I ended up using were a p-value of
+less than 0.001 and log 2 fold change that was less than -5 or greater
+than 5. The filtering left me with 280 significantly differentially
+expressed genes, 198 of them were downregulated and 82 of them were
+upregulated.
 
 Perform filtering of genes according to the above diagram
 
@@ -281,46 +354,56 @@ fpkm_filt <- fpkm_filt %>%
 
 fpkm_filt_norm <- log10(fpkm_filt + 0.1)          
 
-fpkm_filt_norm <- t(fpkm_filt_norm)
+fpkm_filt_norm <- t(fpkm_filt_norm) %>% as.data.frame()
 
-fpkm_filt_norm <- fpkm_filt_norm %>%
-  as.data.frame() %>%
-  rownames_to_column("sample") %>%
+fpkm_filt_norm$sample <- row.names(fpkm_norm)
+
+fpkm_filt_norm <- fpkm_filt_norm %>% 
   mutate(type = ifelse(grepl("norm", sample), "normal tissue",
                          ifelse(grepl("ct", sample), "cancer tissue", "cancer cell line")))
-  
+
 
 fpkm_filt_norm.data <- fpkm_filt_norm %>% select(-c(sample, type))
 
-pca2 <- prcomp(fpkm_filt_norm.data)
+pca2 <- prcomp(fpkm_filt_norm.data, scale. = FALSE)
 
 pca2$x
 ```
 
-    ##             PC1       PC2        PC3        PC4         PC5         PC6
-    ## [1,] -18.128702  4.881388  2.1012668 -0.3824233  0.30454770 -0.07984922
-    ## [2,] -18.450072  3.743089  1.9017633 -0.4220197  0.06823862  0.26245897
-    ## [3,]  12.482702  5.945321 -0.3174978  0.6216570  4.16198547 -1.84216731
-    ## [4,]  12.298481  6.106674 -1.1292513 -0.2898049 -0.31707131  3.55491391
-    ## [5,]   6.802316  5.170019 -3.6776502  0.2852018 -4.25456629 -1.96712942
-    ## [6,]   5.876206 -7.563087  7.1705473  5.9858020 -0.80079993 -0.01144860
-    ## [7,]  -6.442397 -9.929611 -8.9600685  1.9811198  1.02344958  0.36192641
-    ## [8,]   5.561467 -8.353792  2.9108904 -7.7795327 -0.18578383 -0.27870474
-    ##              PC7           PC8
-    ## [1,]  1.97923408 -1.355686e-14
-    ## [2,] -2.02045228  2.857090e-15
-    ## [3,] -0.16016323 -2.346647e-15
-    ## [4,]  0.08271395  1.143877e-14
-    ## [5,] -0.04064251  2.365295e-15
-    ## [6,]  0.03181069 -1.526990e-15
-    ## [7,]  0.08614545  1.325329e-15
-    ## [8,]  0.04135385 -7.632783e-17
+    ##                   PC1       PC2        PC3        PC4         PC5         PC6
+    ## norm1_FPKM -18.128702  4.881388  2.1012668 -0.3824233  0.30454770 -0.07984922
+    ## norm2_FPKM -18.450072  3.743089  1.9017633 -0.4220197  0.06823862  0.26245897
+    ## ct1_FPKM    12.482702  5.945321 -0.3174978  0.6216570  4.16198547 -1.84216731
+    ## ct2_FPKM    12.298481  6.106674 -1.1292513 -0.2898049 -0.31707131  3.55491391
+    ## ct3_FPKM     6.802316  5.170019 -3.6776502  0.2852018 -4.25456629 -1.96712942
+    ## ccl1_FPKM    5.876206 -7.563087  7.1705473  5.9858020 -0.80079993 -0.01144860
+    ## ccl2_FPKM   -6.442397 -9.929611 -8.9600685  1.9811198  1.02344958  0.36192641
+    ## ccl3_FPKM    5.561467 -8.353792  2.9108904 -7.7795327 -0.18578383 -0.27870474
+    ##                    PC7           PC8
+    ## norm1_FPKM  1.97923408 -1.355686e-14
+    ## norm2_FPKM -2.02045228  2.857090e-15
+    ## ct1_FPKM   -0.16016323 -2.346647e-15
+    ## ct2_FPKM    0.08271395  1.143877e-14
+    ## ct3_FPKM   -0.04064251  2.365295e-15
+    ## ccl1_FPKM   0.03181069 -1.526990e-15
+    ## ccl2_FPKM   0.08614545  1.325329e-15
+    ## ccl3_FPKM   0.04135385 -7.632783e-17
 
 ``` r
-autoplot(pca2, scale = FALSE, data = fpkm_filt_norm, colour = "type") + ggtitle("PCA on Filtered Genes") + theme_bw()
+autoplot(pca2, scale = FALSE, data = fpkm_filt_norm, colour = "type", size = 3) + 
+  ggtitle("PCA on 280 Filtered Genes") + 
+  theme_bw()
 ```
 
 <img src="README_files/figure-gfm/redo PCA with filtered genes only-1.png" style="display: block; margin: auto;" />
+
+With the 280 filtered genes, I redid my principal component analysis and
+got the plot that you see on the screen. It looks very similar to my
+first PCA plot with the unfiltered genes, the three groups also
+clustered together and in the same areas, but in this one it looks like
+the samples within each group clustered a bit closer together. Also,
+principal component 1 now accounts for 62% of the variance in the data,
+which is double the principal component 1 from my original PCA plot.
 
 Compute Dendrograms
 
@@ -369,8 +452,9 @@ us the clustering that we expect to see given our knowledge of the three
 groups.
 
 ``` r
-fviz_dend(res.eucl.ward.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE,
-    rect = TRUE, rect_fill = TRUE, show_labels = TRUE, main = "Hierarchical Clustering of Samples Based on Filtered Genes",
+fviz_dend(res.eucl.ward.hc, cex = 0.75, k = 3, color_labels_by_k = TRUE,
+    k_colors = c("blue", "red", "darkgreen"), rect = TRUE, rect_fill = TRUE,
+    show_labels = TRUE, main = "Hierarchical Clustering of Samples Based on 280 Filtered Genes",
     xlab = "Samples")
 ```
 
@@ -378,6 +462,10 @@ fviz_dend(res.eucl.ward.hc, cex = 0.5, k = 3, color_labels_by_k = TRUE,
     ## "none")` instead.
 
 <img src="README_files/figure-gfm/visualize p3-1.png" style="display: block; margin: auto;" />
+
+The clustering turned out really nice, you can see the top separation
+separated cancer from non-cancer, and within the cancer cluster there’s
+a separation between cancer tissue and cancer cell lines.
 
 Evaluate Dendrograms
 
@@ -494,6 +582,16 @@ draw(hmap)
 
 <img src="README_files/figure-gfm/annotated heatmap wards-1.png" style="display: block; margin: auto;" />
 
+You can see that there is a large block of genes that are expressed
+highly in normal tissue and a block of genes expressed highly in cancer
+tissue. The cell line cluster seems to be spread out, with some highly
+expressed genes overlapping with normal tissue and some overlapping with
+cancerous tissue. On the right side, I also included boxplots of the
+overall fpkm values and you can see that the expression levels are
+higher overall for the normal samples, compared to the cancer samples
+which makes sense because now I’m working with more genes that are
+downregulated in cancer than upregulated
+
 At this point, I submitted the list of up regulated and down regulated
 genes to do a simple integrated pathway analysis (software from QIAGEN).
 There were many significant pathways returned, many of the down
@@ -508,7 +606,7 @@ was down regulated in cancerous samples, compared to normal samples.
 #### Heatmap of carbohydrate metabolism pathway.
 
 I will look at the “metabolism of carbohydrates” pathway, which is
-downregulated in gi cancer.
+downregulated in gastric cancer.
 
 ``` r
 meta <- read_xls("./IPA-results/down-genes_diseases_and_functions.xls",
@@ -563,12 +661,7 @@ meta <- meta %>%
 meta_norm <- log10(meta + 0.1)
 ```
 
-``` r
-Heatmap(meta_norm, name = "expression", show_column_names = TRUE,
-    row_split = 3, clustering_method_rows = "ward.D2", clustering_method_columns = "ward.D2")
-```
-
-<img src="README_files/figure-gfm/simple heatmap of normalized metabolism pathway fpkms-1.png" style="display: block; margin: auto;" />
+#### Plot heatmap of carbohydrate gene expression
 
 ``` r
 Heatmap(meta_norm, name = "expression", show_column_names = TRUE,
@@ -715,12 +808,12 @@ between cancer and non cancer
 
 ``` r
 meta_pval %>%
+    arrange(`PC Corrected p-value`) %>%
+    rename(`p-value before PC correction` = `Non PC Corrected p-value`,
+        `p-value after PC correction` = `PC Corrected p-value`) %>%
     reshape::melt() %>%
-    # mutate(value = as.numeric(value)) %>%
-arrange(gene) %>%
-    ggplot(aes(x = forcats::fct_reorder(factor(gene), value),
-        y = value)) + geom_bar(aes(fill = variable), stat = "identity",
-    position = "dodge", width = 0.5) + scale_fill_manual(values = c("#1B32FA",
+    ggplot(aes(x = fct_inorder(gene), y = value)) + geom_bar(aes(fill = variable),
+    stat = "identity", position = "dodge", width = 0.5) + scale_fill_manual(values = c("gray",
     "#FA871B")) + theme(axis.text.x = element_text(angle = 90,
     vjust = 0.5, hjust = 1)) + geom_hline(yintercept = 0.05,
     linetype = "dashed") + labs(y = "p-value", x = "gene")
@@ -728,16 +821,58 @@ arrange(gene) %>%
 
 <img src="README_files/figure-gfm/plot p-values-1.png" style="display: block; margin: auto;" />
 
-Plot heatmap of carbohydrate gene expression
+Retest linear model correction with principal components from filtered
+PCA (I am doing this just out of curiosity, I will go with using the
+principal components from the first PCA for this analysis, as those
+describe the **innate** differences between the three groups)
 
 ``` r
-Heatmap(meta_norm, name = "expression", show_column_names = TRUE,
-    row_split = 3, clustering_method_rows = "ward.D2", clustering_method_columns = "ward.D2") +
-    rowAnnotation(`log10(fpkm)` = anno_boxplot(meta_norm)) +
-    rowAnnotation(rn = anno_text(rownames(meta_norm)))
+# add PC1 and PC2 to the data frame for correction
+
+lm_df2 <- merge(x = pca2$x, y = meta_norm, by = "row.names") %>%
+    select(-c(4:9)) %>%
+    rename(group = Row.names) %>%
+    mutate(group = if_else(grepl("norm", group), "normal tissue",
+        if_else(grepl("ct", group), "cancer tissue", "cancer cell line")))
+
+
+# lm test on all genes
+no_correction <- list()  # initialize empty list to hold p-values for non-corrected lm test
+correction <- list()  # empty list to hold p-values for corrected lm test
+for (i in names(lm_df[4:length(names(lm_df2))])) {
+    no_correction[i] <- lmp(lm(get(i) ~ group, lm_df2))
+    correction[i] <- lmp(lm(get(i) ~ group + PC1 + PC2, lm_df2))
+}
+
+
+# store results in data frame
+meta_pval2 <- rbind(as.data.frame(no_correction), as.data.frame(correction)) %>%
+    t() %>%
+    as.data.frame() %>%
+    rename(`Non PC Corrected p-value` = V1, `PC Corrected p-value` = V2) %>%
+    format(scientific = FALSE) %>%
+    rownames_to_column("gene")
+
+meta_pval2 <- meta_pval2 %>%
+    mutate(`Non PC Corrected p-value` = as.numeric(`Non PC Corrected p-value`),
+        `PC Corrected p-value` = as.numeric(`PC Corrected p-value`))
+
+
+meta_pval2 %>%
+    arrange(`PC Corrected p-value`) %>%
+    rename(`p-value before PC correction` = `Non PC Corrected p-value`,
+        `p-value after PC correction` = `PC Corrected p-value`) %>%
+    reshape::melt() %>%
+    ggplot(aes(x = fct_inorder(gene), y = value)) + geom_bar(aes(fill = variable),
+    stat = "identity", position = "dodge", width = 0.5) + scale_fill_manual(values = c("gray",
+    "#FA871B")) + theme(axis.text.x = element_text(angle = 90,
+    vjust = 0.5, hjust = 1)) + geom_hline(yintercept = 0.05,
+    linetype = "dashed") + labs(y = "p-value", x = "gene")
 ```
 
-<img src="README_files/figure-gfm/heatmap of carbohydrate metabolism pathway-1.png" style="display: block; margin: auto;" />
+    ## Using gene as id variables
+
+<img src="README_files/figure-gfm/add principal components from second PCA to data frame-1.png" style="display: block; margin: auto;" />
 
 It appears that after correcting for the first two principal components,
 all genes except for CD22, B3GNT8, B3GAT1, and ALDH1A1 are significant.
@@ -807,30 +942,6 @@ I have selected three genes of interest to me: GPD1, GCNT4, and SLC24A
 for further analysis.
 
 ``` r
-summary(lm(GPD1 ~ group, lm_df))
-```
-
-    ## 
-    ## Call:
-    ## lm(formula = GPD1 ~ group, data = lm_df)
-    ## 
-    ## Residuals:
-    ##        1        2        3        4        5        6        7        8 
-    ## -0.34610  0.31902  0.02707 -0.12277 -0.06920  0.19197  0.02135 -0.02135 
-    ## 
-    ## Coefficients:
-    ##                    Estimate Std. Error t value Pr(>|t|)   
-    ## (Intercept)         -0.5523     0.1366  -4.043  0.00989 **
-    ## groupcancer tissue  -0.1648     0.1932  -0.853  0.43262   
-    ## groupnormal tissue   1.1126     0.2160   5.151  0.00361 **
-    ## ---
-    ## Signif. codes:  0 '***' 0.001 '**' 0.01 '*' 0.05 '.' 0.1 ' ' 1
-    ## 
-    ## Residual standard error: 0.2366 on 5 degrees of freedom
-    ## Multiple R-squared:  0.8863, Adjusted R-squared:  0.8409 
-    ## F-statistic:  19.5 on 2 and 5 DF,  p-value: 0.004355
-
-``` r
 p1 <- lm_df %>%
     select(group, GPD1) %>%
     group_by(group) %>%
@@ -878,3 +989,123 @@ grid.arrange(p1, p2, p3, ncol = 2)
 ```
 
 <img src="README_files/figure-gfm/barplots of individual genes-1.png" style="display: block; margin: auto;" />
+
+Here are the barplots of their average expression and standard error
+between the three groups. I also included the p-values of their
+significance after correcting for principal components 1 and 2, you can
+see that levels of expression are a lot lower in cancer cell lines and
+tissue compared to the normal groups and their error bars don’t overlap.
+
+#### SLC2A4
+
+SLC2A4 is a member of the solute-carrier family-2 proteins. It encodes
+the protein GLUT4, which is responsible for the diffusion of circulating
+glucose down its concentration gradient into muscle and fat cells, where
+they are converted either to glucose-6-phosphate for glycolysis or
+glycogen for storage.
+
+GLUT4 plays an essential role in maintaining body glucose homeostasis
+and is regulated by insulin
+
+In a [previous study](https://pubmed.ncbi.nlm.nih.gov/34488531/) looking
+at the solute-carrier family-2’s implications in cancer, they analyzed
+mRNA expression data in 20 cancer types from the Oncomine database and
+filtered based on a p-value of less than 0.01 and fold change of 1.5.
+They found that SLC2A4 was significantly downregulated in breast cancer.
+
+To verify their results, they used a web-based tool called UALCAN and
+found that mRNA expression of SLC2A4 was significantly downregulated in
+all individual breast cancer stages with p-value \< 0.01. I included a
+screenshot of their results in the top picture.
+
+They then used a Kaplan-Meier survival analysis and demonstrated that
+high expression of SLC2A4 was related to better prognosis in stage I and
+III breast cancer. I included a picture of their survival curve for
+stage I cancer on the bottom.
+
+Lastly, they used a software called MEXPRESS to assess whether DNA
+hypermethylation in the promoter of SLC2A4 was related to its
+expression. They found that there was a statistical difference when
+comparing breast cancer samples versus normal samples, suggesting that
+this is a regulator of mRNA expression.
+
+Overall, they suggest that GLUT4 downregulation may inhibit glucose
+uptake and induce metabolic reprogramming and also affect downstream
+pathways that play key roles in tumorigenesis and progression. But they
+state that further studies with larger sample sizes are needed for a
+better understanding of the mechanisms of SLC2A4 in cancer.
+
+#### GPD1
+
+GPD1 plays a role in carbohydrate and lipid metabolism, specifically in
+the conversion of DHAP and NADH into glycerol-3-phosphate and NAD+.
+Together with GPD2, the two proteins carry electrons generated by
+glycolysis into the electron transport chain.
+
+In [this
+study](https://jhoonline.biomedcentral.com/articles/10.1186/s13045-022-01312-5)
+that used 17 pairs of bladder cancer tissue and matched adjacent tissue,
+they analyzed differential expression using proteomics, and identified
+almost 100,000 peptides. After filtering with 1.5 fold change difference
+and a p-value of 0.05 as the cutoff, they narrowed the proteins down to
+518 downregulated proteins, and found GPD1 to be the most significantly
+downregulated, which I highlighted in the volcano plot in figure B.
+
+They verified their results using a Western blot (figure C on the slide)
+and also used a Kaplan-Meier estimate to observe that GPD1 was
+correlated with decreased survival time for breast cancer patients,
+which led them to hypothesize that GPD1 may have antitumor functions.
+
+To summarize their findings: they determined that GPD1 increases a
+compound called lysoPC through a glycerophospholipid metabolism pathway.
+lysoPC then upregulated expression of TRPV2, causing a calcium influx
+that inhibits cell proliferation and induces apoptosis.
+
+#### GCNT4
+
+GCNT 4 stands for glucosaminyl (N-acetyl) transferase 4. It is part of a
+family, named GCNT1 through 4, and all of them are involved in mucin
+core structure synthesis and branching. These mucins are the most common
+macromolecules in mucus and are mainly responsible for its properties.
+
+It’s been hypothesized that members of the GCNT family influences cancer
+genesis by regulating cell growth and apoptosis pathways and have been
+identified in colon, breast, prostate, and pancreatic cancer.
+
+In [this paper](https://pubmed.ncbi.nlm.nih.gov/34696660/), the
+researchers looked at gene expression data from gastric cancer and
+non-tumor samples published in GEO. They filtered differentially
+expressed genes using the criteria of having a log fold change of less
+than -1.5 and p-value of 0.05 and found GCNT4 as a gene of interest as a
+suppressor of gastric cancer cell proliferation.
+
+Additionally, they used a program called TargetScan to predict an
+microRNA that binds to the 3’UTR of GCNT4 and confirmed in 45 of their
+own gastric cancer samples that this microRNA decreases GCNT4 expression
+which in turn upregulated downstream pathways that have been studied in
+the progression of gastric cancer.
+
+#### Conclusions and Future Directions
+
+Overall, my findings of abnormally expressed genes and pathways in
+gastric cancer were consistent with my expectations with many cancer
+related pathways being upregulated and many immune cell pathways being
+downregulated.
+
+Also, the downregulation of carbohydrate metabolism pathways has been
+observed in a variety of different cancers, including gastric cancer,
+and the three genes that I looked at are involved in different parts of
+carbohydrate metabolism pathways.
+
+It’s possible that the pathway I looked at was significant in gastric
+cancer because of the genes’ “cross-talk” with other pathways that have
+to do with cell cycle or immune cell regulation.
+
+Moving forward, I think that it would be insightful to screen a larger
+and more diverse sample of gastric cancer tissues and include people of
+different ethnicities as well as from the different subtypes of gastric
+cancer so that we can see if we observe any overlap in carbohydrate
+metabolism pathways. Then, I think that it would be interesting to
+filter out the pathways that overlap with ones that are abnormally
+expressed in other types of cancer, so that we can consider any that are
+left to be possibly gastric cancer-specific.
